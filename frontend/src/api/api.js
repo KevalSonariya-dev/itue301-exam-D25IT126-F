@@ -54,6 +54,53 @@ export const api = {
     const response = await apiClient.patch(`/tickets/${ticketId}/status`, { status });
     return response.data;
   },
+
+  // --- Admin Endpoints ---
+  getAdminStats: async () => {
+    const response = await apiClient.get('/admin/stats');
+    return response.data;
+  },
+
+  getAdminEvents: async () => {
+    const response = await apiClient.get('/admin/events');
+    return response.data;
+  },
+
+  createAdminEvent: async (eventData) => {
+    const response = await apiClient.post('/admin/events', eventData);
+    return response.data;
+  },
+
+  updateAdminEvent: async (id, eventData) => {
+    const response = await apiClient.put(`/admin/events/${id}`, eventData);
+    return response.data;
+  },
+
+  deleteAdminEvent: async (id) => {
+    const response = await apiClient.delete(`/admin/events/${id}`);
+    return response.data;
+  },
+
+  getAdminBookings: async (params = {}) => {
+    const response = await apiClient.get('/admin/bookings', { params });
+    return response.data;
+  },
+
+  updateAdminBookingStatus: async (id, status) => {
+    const response = await apiClient.patch(`/admin/bookings/${id}/status`, { status });
+    return response.data;
+  },
+
+  getAdminAttendees: async (search) => {
+    const params = search ? { search } : {};
+    const response = await apiClient.get('/admin/attendees', { params });
+    return response.data;
+  },
+
+  getAdminAttendeeById: async (id) => {
+    const response = await apiClient.get(`/admin/attendees/${id}`);
+    return response.data;
+  },
 };
 
 export default api;

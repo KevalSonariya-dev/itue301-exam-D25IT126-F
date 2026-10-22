@@ -20,10 +20,18 @@ function LoginPage() {
   // If already authenticated with token, navigate away
   useEffect(() => {
     if (token) {
-      const destination = location.state?.from?.pathname || '/events';
+      const destination =
+        location.state?.from?.pathname ||
+        (role === 'admin' ? '/admin' : role === 'organizer' ? '/organizer' : '/events');
       navigate(destination, { replace: true });
     }
-  }, [token, navigate, location]);
+  }, [token, role, navigate, location]);
+
+  const getRedirectPath = (userRole) => {
+    if (userRole === 'admin') return '/admin';
+    if (userRole === 'organizer') return '/organizer';
+    return '/events';
+  };
 
   const handleStandardLogin = async (e) => {
     e.preventDefault();
@@ -40,8 +48,7 @@ function LoginPage() {
 
       if (res && res.token && res.attendee) {
         login(res.attendee, res.token, res.attendee.role);
-        const redirectPath = res.attendee.role === 'organizer' ? '/organizer' : '/events';
-        navigate(redirectPath, { replace: true });
+        navigate(getRedirectPath(res.attendee.role), { replace: true });
       }
     } catch (err) {
       console.error('Login failed:', err);
@@ -64,8 +71,7 @@ function LoginPage() {
 
       if (res && res.token && res.attendee) {
         login(res.attendee, res.token, res.attendee.role);
-        const redirectPath = res.attendee.role === 'organizer' ? '/organizer' : '/events';
-        navigate(redirectPath, { replace: true });
+        navigate(getRedirectPath(res.attendee.role), { replace: true });
       }
     } catch (err) {
       console.error('Quick login failed:', err);
@@ -149,7 +155,7 @@ function LoginPage() {
                 handleQuickLogin('attendee@charusat.edu.in', 'Password123!')
               }
             >
-              👤 Login as Attendee
+              👤 Attendee
             </button>
             <button
               type="button"
@@ -159,7 +165,17 @@ function LoginPage() {
                 handleQuickLogin('organizer@charusat.edu.in', 'Password123!')
               }
             >
-              🛡️ Login as Organizer
+              🛡️ Organizer
+            </button>
+            <button
+              type="button"
+              className="btn-quick-admin"
+              disabled={isSubmitting}
+              onClick={() =>
+                handleQuickLogin('admin@charusat.edu.in', 'Password123!')
+              }
+            >
+              ⚙️ Admin
             </button>
           </div>
         </div>

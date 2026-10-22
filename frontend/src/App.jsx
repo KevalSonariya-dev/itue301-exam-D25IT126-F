@@ -10,9 +10,16 @@ import './App.css';
 // Requirement 1: Lazy-load OrganizerPanel using React.lazy
 const OrganizerPanel = lazy(() => import('./pages/OrganizerPanel'));
 
+// Admin Panel Components
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminEvents from './pages/admin/AdminEvents';
+import AdminBookings from './pages/admin/AdminBookings';
+import AdminAttendees from './pages/admin/AdminAttendees';
+
 /**
  * Navigation Bar Component
- * Requirement 6: Navigation links for all four routes using NavLink without full-page reloads.
+ * Requirement 6: Navigation links for all routes using NavLink without full-page reloads.
  */
 function NavigationBar() {
   const { attendee, role, isAuthenticated, logout } = useAuth();
@@ -31,7 +38,7 @@ function NavigationBar() {
           <span className="brand-name">EventHub</span>
         </NavLink>
 
-        {/* Navigation links for all four routes */}
+        {/* Navigation links */}
         <nav className="nav-links">
           <NavLink
             to="/"
@@ -64,12 +71,24 @@ function NavigationBar() {
             Organizer Panel
           </NavLink>
 
+          {/* Admin link visible only to users with the 'admin' role */}
+          {isAuthenticated && role === 'admin' && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `nav-btn nav-admin-highlight ${isActive ? 'active' : ''}`
+              }
+            >
+              ⚙️ Admin Panel
+            </NavLink>
+          )}
+
           {/* User profile / session status */}
           {isAuthenticated && (
             <div className="user-session-bar">
               <span className="user-greeting">
                 👤 {attendee?.name || 'User'}
-                <span className="role-tag">({role})</span>
+                <span className={`role-tag role-${role}`}>({role})</span>
               </span>
               <button
                 type="button"
@@ -144,6 +163,21 @@ function AppRoutes() {
                 </ProtectedRoute>
               }
             />
+
+            {/* Protected Route: Admin Panel and Nested Pages (Requires 'admin' Role) */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<AdminDashboard />} />
+              <Route path="events" element={<AdminEvents />} />
+              <Route path="bookings" element={<AdminBookings />} />
+              <Route path="attendees" element={<AdminAttendees />} />
+            </Route>
 
             {/* Catch-all fallback */}
             <Route path="*" element={<LoginPage />} />

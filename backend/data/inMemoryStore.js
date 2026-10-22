@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * TEMPORARY IN-MEMORY DATA STORAGE MODULE (TASK 3 & BOOKING ENHANCEMENT)
+ * TEMPORARY IN-MEMORY DATA STORAGE MODULE (TASK 3 & ADMIN PANEL)
  * ============================================================================
  * NOTE FOR EXAMINER / VIVA:
  * This module provides temporary, non-persistent in-memory data storage for
@@ -21,7 +21,7 @@ const bcrypt = require('bcryptjs');
 const DEMO_PASSWORD_HASH = bcrypt.hashSync('Password123!', 10);
 
 /**
- * 1. Initial Sample Attendees
+ * 1. Initial Sample Attendees (Includes Attendee, Organizer, and Admin)
  */
 const attendees = [
   {
@@ -50,6 +50,15 @@ const attendees = [
     password: DEMO_PASSWORD_HASH,
     role: 'attendee',
     createdAt: new Date('2026-10-02T10:00:00Z'),
+  },
+  {
+    id: 'usr-admin',
+    name: 'System Administrator',
+    email: 'admin@charusat.edu.in',
+    phone: '+91 9999988888',
+    password: DEMO_PASSWORD_HASH,
+    role: 'admin',
+    createdAt: new Date('2026-10-01T08:00:00Z'),
   },
 ];
 
@@ -195,13 +204,16 @@ const inMemoryStore = {
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync(password, salt);
 
+    // Prevent ordinary attendees from self-assigning the admin role
+    const assignedRole = role === 'organizer' ? 'organizer' : 'attendee';
+
     const newAttendee = {
       id: `usr-${attendeeIdCounter++}`,
       name: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone ? phone.trim() : '',
       password: hashedPassword,
-      role: role === 'organizer' ? 'organizer' : 'attendee',
+      role: assignedRole,
       createdAt: new Date(),
     };
 
@@ -307,11 +319,12 @@ const inMemoryStore = {
       return { error: 'NOT_FOUND', message: `Ticket not found with ID: ${ticketId}` };
     }
 
-    // Authorization check
+    // Authorization check: Owner, Organizer, or Admin
     const isOwner = ticket.attendeeId === requestingUserId;
     const isOrganizer = requestingUserRole === 'organizer';
+    const isAdmin = requestingUserRole === 'admin';
 
-    if (!isOwner && !isOrganizer) {
+    if (!isOwner && !isOrganizer && !isAdmin) {
       return {
         error: 'FORBIDDEN',
         message: 'Access forbidden. You are not authorized to modify another attendee\'s ticket.',
@@ -329,15 +342,11 @@ const inMemoryStore = {
       };
     }
 
-    // Idempotent check
+    // Prevent duplicate status updates and repeated cancellation attempts
     if (previousStatus === newStatus) {
       return {
-        success: true,
-        message: `Ticket is already "${newStatus}". No inventory change required.`,
-        ticket: populateTicket(ticket),
-        eventTicketsAvailable: event ? event.ticketsAvailable : null,
-        ticketsBooked: event ? event.ticketsBooked : null,
-        totalTickets: event ? event.totalTickets : null,
+        error: 'INVALID_TRANSITION',
+        message: `Ticket is already "${newStatus}". Repeated status transition rejected to preserve inventory integrity.`,
       };
     }
 
@@ -372,6 +381,195 @@ const inMemoryStore = {
       eventTicketsAvailable: event ? event.ticketsAvailable : null,
       ticketsBooked: event ? event.ticketsBooked : null,
       totalTickets: event ? event.totalTickets : null,
+    };
+  },
+
+  // ==========================================================================
+  // ADMIN PANEL OPERATIONS
+  // ==========================================================================
+
+  /**
+   * Calculate live summary statistics from existing data
+   */
+  getDashboardStats: () => {
+    const totalEvents = events.length;
+    const totalTicketCapacity = events.reduce((sum, e) => sum + (e.totalTickets || 0), 0);
+    const ticketsBooked = events.reduce((sum, e) => sum + (e.ticketsBooked || 0), 0);
+    const ticketsRemaining = events.reduce((sum, e) => sum + (e.ticketsAvailable || 0), 0);
+
+    const totalBookings = tickets.length;
+    const activeBookings = tickets.filter((t) => t.status === 'booked');
+    const cancelledBookings = tickets.filter((t) => t.status === 'cancelled');
+    const usedBookings = tickets.filter((t) => t.status === 'used');
+
+    const activeTicketsCount = activeBookings.reduce((sum, t) => sum + t.quantity, 0);
+    const cancelledTicketsCount = cancelledBookings.reduce((sum, t) => sum + t.quantity, 0);
+    const usedTicketsCount = usedBookings.reduce((sum, t) => sum + t.quantity, 0);
+
+    return {
+      totalEvents,
+      totalTicketCapacity,
+      ticketsBooked,
+      ticketsRemaining,
+      totalBookings,
+      activeBookingsCount: activeBookings.length,
+      cancelledBookingsCount: cancelledBookings.length,
+      usedBookingsCount: usedBookings.length,
+      activeTicketsCount,
+      cancelledTicketsCount,
+      usedTicketsCount,
+    };
+  },
+
+  /**
+   * Admin: Update event details and preserve inventory invariants
+   */
+  adminUpdateEvent: (eventId, { title, category, date, venue, totalTickets }) => {
+    const event = events.find((e) => e.id === eventId);
+    if (!event) {
+      return { error: 'NOT_FOUND', message: `Event not found with ID: ${eventId}` };
+    }
+
+    if (totalTickets !== undefined) {
+      const newCap = Number(totalTickets);
+      if (isNaN(newCap) || newCap < 1) {
+        return { error: 'INVALID_CAPACITY', message: 'Total capacity must be a positive integer.' };
+      }
+      if (newCap < event.ticketsBooked) {
+        return {
+          error: 'CAPACITY_TOO_LOW',
+          message: `New capacity (${newCap}) cannot be lower than the ${event.ticketsBooked} tickets already booked.`,
+          ticketsBooked: event.ticketsBooked,
+        };
+      }
+      event.totalTickets = newCap;
+      event.ticketsAvailable = newCap - event.ticketsBooked;
+    }
+
+    if (title && title.trim()) event.title = title.trim();
+    if (category && category.trim()) event.category = category.trim();
+    if (date && date.trim()) event.date = date.trim();
+    if (venue && venue.trim()) event.venue = venue.trim();
+
+    return { success: true, event: { ...event } };
+  },
+
+  /**
+   * Admin: Safely delete an event only when no active bookings exist
+   */
+  adminDeleteEvent: (eventId) => {
+    const eventIndex = events.findIndex((e) => e.id === eventId);
+    if (eventIndex === -1) {
+      return { error: 'NOT_FOUND', message: `Event not found with ID: ${eventId}` };
+    }
+
+    const event = events[eventIndex];
+    // Check if active bookings exist
+    const activeBookings = tickets.filter(
+      (t) => t.eventId === eventId && t.status === 'booked'
+    );
+
+    if (activeBookings.length > 0) {
+      return {
+        error: 'HAS_ACTIVE_BOOKINGS',
+        message: `Cannot delete event "${event.title}". It has ${activeBookings.length} active booking(s) with ${event.ticketsBooked} ticket(s) reserved. Cancel those bookings first to avoid orphaned records.`,
+        activeBookingsCount: activeBookings.length,
+      };
+    }
+
+    // Safe deletion: remove event from array
+    events.splice(eventIndex, 1);
+    return { success: true, message: `Event "${event.title}" deleted safely.` };
+  },
+
+  /**
+   * Admin: Fetch all bookings with search and filter
+   */
+  adminGetAllBookings: ({ status, search, eventId } = {}) => {
+    let list = tickets.map(populateTicket);
+
+    if (status && status !== 'all') {
+      list = list.filter((t) => t.status === status);
+    }
+
+    if (eventId && eventId !== 'all') {
+      list = list.filter((t) => (t.eventId?.id || t.eventId) === eventId);
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.id.toLowerCase().includes(q) ||
+          (t.attendeeId?.name && t.attendeeId.name.toLowerCase().includes(q)) ||
+          (t.attendeeId?.email && t.attendeeId.email.toLowerCase().includes(q)) ||
+          (t.eventId?.title && t.eventId.title.toLowerCase().includes(q))
+      );
+    }
+
+    return list;
+  },
+
+  /**
+   * Admin: Fetch all attendees with booking counts (excluding password hashes)
+   */
+  adminGetAllAttendees: (search) => {
+    let list = attendees.map((a) => {
+      const userTickets = tickets.filter((t) => t.attendeeId === a.id);
+      const totalBookingsCount = userTickets.length;
+      const totalTicketsCount = userTickets.reduce((sum, t) => sum + t.quantity, 0);
+      const activeTicketsCount = userTickets
+        .filter((t) => t.status === 'booked')
+        .reduce((sum, t) => sum + t.quantity, 0);
+
+      return {
+        id: a.id,
+        name: a.name,
+        email: a.email,
+        phone: a.phone,
+        role: a.role,
+        createdAt: a.createdAt,
+        totalBookingsCount,
+        totalTicketsCount,
+        activeTicketsCount,
+      };
+    });
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.name.toLowerCase().includes(q) ||
+          a.email.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  },
+
+  /**
+   * Admin: Fetch single attendee details with their booking history
+   */
+  adminGetAttendeeById: (attendeeId) => {
+    const attendee = attendees.find((a) => a.id === attendeeId);
+    if (!attendee) {
+      return null;
+    }
+
+    const attendeeBookings = tickets
+      .filter((t) => t.attendeeId === attendeeId)
+      .map(populateTicket);
+
+    return {
+      attendee: {
+        id: attendee.id,
+        name: attendee.name,
+        email: attendee.email,
+        phone: attendee.phone,
+        role: attendee.role,
+        createdAt: attendee.createdAt,
+      },
+      bookings: attendeeBookings,
     };
   },
 };

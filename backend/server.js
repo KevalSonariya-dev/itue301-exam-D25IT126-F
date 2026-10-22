@@ -10,10 +10,11 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const requestLogger = require('./middleware/requestLogger');
 const errorHandler = require('./middleware/errorHandler');
 
-// 3. Import Route Handlers (Using decoupled in-memory store for Task 3)
+// 4. Import Route Handlers (Using decoupled in-memory store for Task 3)
 const authRoutes = require('./routes/authRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -69,6 +70,7 @@ app.get('/', (req, res) => {
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/events', eventRoutes);
 app.use('/api/v1/tickets', ticketRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
 // 8. 404 Route Handler for unknown endpoints
 app.use((req, res, next) => {
