@@ -56,9 +56,12 @@ router.post('/', authGuard, (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      message: 'Ticket booked successfully.',
+      message: 'Booking successful',
       data: result.ticket,
       remainingEventStock: result.remainingStock,
+      ticketsBooked: result.ticketsBooked,
+      totalTickets: result.totalTickets,
+      event: result.event,
     });
   } catch (error) {
     next(error);
@@ -153,6 +156,8 @@ router.patch('/:id/status', authGuard, (req, res, next) => {
       message: result.message,
       data: result.ticket,
       eventTicketsAvailable: result.eventTicketsAvailable,
+      ticketsBooked: result.ticketsBooked,
+      totalTickets: result.totalTickets,
     });
   } catch (error) {
     next(error);

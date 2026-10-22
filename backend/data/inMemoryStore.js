@@ -1,26 +1,27 @@
 /**
  * ============================================================================
- * TEMPORARY IN-MEMORY DATA STORAGE MODULE (TASK 3)
+ * TEMPORARY IN-MEMORY DATA STORAGE MODULE (TASK 3 & BOOKING ENHANCEMENT)
  * ============================================================================
  * NOTE FOR EXAMINER / VIVA:
  * This module provides temporary, non-persistent in-memory data storage for
- * Attendees, Events, and Tickets. It enables full testing of the Express REST API
- * (Task 3) while database connectivity (Task 5) is deferred.
+ * Attendees, Events, and Tickets.
+ * 
+ * Invariant Maintained Across All Events:
+ *   ticketsBooked + ticketsAvailable = totalTickets
  * 
  * - Data lives in memory and resets whenever the Node.js server restarts.
- * - Data operations are isolated here so they can be replaced cleanly with
- *   Mongoose models and MongoDB Atlas queries in the next examination phase.
+ * - Synchronous, atomic inventory operations prevent race conditions.
+ * - Decoupled repository architecture allows transparent swap with Mongoose in Task 5.
  * ============================================================================
  */
 
 const bcrypt = require('bcryptjs');
 
 // Pre-computed bcrypt hash for 'Password123!' (Salt rounds: 10)
-// Generated securely so server starts immediately without synchronous hashing delay
 const DEMO_PASSWORD_HASH = bcrypt.hashSync('Password123!', 10);
 
 /**
- * 1. Initial Sample Attendees (Pre-seeded with hashed passwords)
+ * 1. Initial Sample Attendees
  */
 const attendees = [
   {
@@ -53,7 +54,8 @@ const attendees = [
 ];
 
 /**
- * 2. Initial Sample Events (Matching Tasks 1 & 2 requirements)
+ * 2. Initial Sample Events
+ * INVARIANT: ticketsBooked + ticketsAvailable = totalTickets
  */
 const events = [
   {
@@ -62,7 +64,9 @@ const events = [
     category: 'Technology',
     date: 'Nov 15, 2026 • 09:00 AM',
     venue: 'Convention Center, Hall A',
-    ticketsAvailable: 45,
+    totalTickets: 47,
+    ticketsBooked: 2,
+    ticketsAvailable: 45, // 2 + 45 = 47
     createdAt: new Date('2026-10-10T08:00:00Z'),
   },
   {
@@ -71,7 +75,9 @@ const events = [
     category: 'Concert',
     date: 'Dec 05, 2026 • 06:30 PM',
     venue: 'Grand Amphitheater Arena',
-    ticketsAvailable: 120,
+    totalTickets: 150,
+    ticketsBooked: 30,
+    ticketsAvailable: 120, // 30 + 120 = 150
     createdAt: new Date('2026-10-11T08:00:00Z'),
   },
   {
@@ -80,7 +86,9 @@ const events = [
     category: 'Conference',
     date: 'Oct 30, 2026 • 10:00 AM',
     venue: 'City Tech Park Auditorium',
-    ticketsAvailable: 0, // Demonstrates Sold Out status
+    totalTickets: 100,
+    ticketsBooked: 100,
+    ticketsAvailable: 0, // 100 + 0 = 100 (Sold Out)
     createdAt: new Date('2026-10-12T08:00:00Z'),
   },
   {
@@ -89,7 +97,9 @@ const events = [
     category: 'Workshop',
     date: 'Nov 22, 2026 • 02:00 PM',
     venue: 'Creative Arts Hub, Room 4B',
-    ticketsAvailable: 18,
+    totalTickets: 19,
+    ticketsBooked: 1,
+    ticketsAvailable: 18, // 1 + 18 = 19
     createdAt: new Date('2026-10-13T08:00:00Z'),
   },
   {
@@ -98,7 +108,9 @@ const events = [
     category: 'Cybersecurity',
     date: 'Dec 12, 2026 • 11:00 AM',
     venue: 'Silicon Valley Expo Hall',
-    ticketsAvailable: 0, // Demonstrates Sold Out status
+    totalTickets: 50,
+    ticketsBooked: 50,
+    ticketsAvailable: 0, // 50 + 0 = 50 (Sold Out)
     createdAt: new Date('2026-10-14T08:00:00Z'),
   },
   {
@@ -107,7 +119,9 @@ const events = [
     category: 'Business',
     date: 'Jan 10, 2027 • 05:00 PM',
     venue: 'Metropolitan Hotel Ballroom',
-    ticketsAvailable: 65,
+    totalTickets: 100,
+    ticketsBooked: 35,
+    ticketsAvailable: 65, // 35 + 65 = 100
     createdAt: new Date('2026-10-15T08:00:00Z'),
   },
 ];
@@ -134,13 +148,12 @@ const tickets = [
   },
 ];
 
-// Counter for auto-generating unique incremental ticket and attendee IDs
+// Incremental ID generator counters
 let ticketIdCounter = 9003;
 let attendeeIdCounter = 4;
 
 /**
- * Helper to populate a ticket object with attendee and event details
- * Equivalent to Mongoose .populate('attendeeId', 'name email').populate('eventId', 'title date venue')
+ * Populate helper equivalent to Mongoose .populate()
  */
 const populateTicket = (ticket) => {
   const event = events.find((e) => e.id === ticket.eventId);
@@ -158,14 +171,14 @@ const populateTicket = (ticket) => {
           category: event.category,
           date: event.date,
           venue: event.venue,
+          totalTickets: event.totalTickets,
+          ticketsBooked: event.ticketsBooked,
+          ticketsAvailable: event.ticketsAvailable,
         }
       : ticket.eventId,
   };
 };
 
-/**
- * Storage Service Operations
- */
 const inMemoryStore = {
   // --- Attendees Operations ---
   findAttendeeByEmail: (email) => {
@@ -210,27 +223,24 @@ const inMemoryStore = {
     return events.find((e) => e.id === id);
   },
 
-  createEvent: ({ title, category, date, venue, ticketsAvailable }) => {
+  createEvent: ({ title, category, date, venue, ticketsAvailable, totalTickets }) => {
+    const cap = Number(totalTickets || ticketsAvailable || 50);
     const newEvent = {
       id: `evt-${Date.now()}`,
       title: title.trim(),
       category: category ? category.trim() : 'General',
       date: date.trim(),
       venue: venue.trim(),
-      ticketsAvailable: Number(ticketsAvailable),
+      totalTickets: cap,
+      ticketsBooked: 0,
+      ticketsAvailable: cap,
       createdAt: new Date(),
     };
     events.push(newEvent);
     return newEvent;
   },
 
-  // --- Tickets Operations (Atomic In-Memory Operations) ---
-
-  /**
-   * Atomic ticket booking operation:
-   * Synchronously verifies event and quota, decrements inventory, and issues ticket.
-   * Node.js executes this synchronously on the event loop, preventing race conditions.
-   */
+  // --- Atomic Ticket Booking Operation ---
   bookTicketAtomic: (attendeeId, eventId, quantity) => {
     const event = events.find((e) => e.id === eventId);
 
@@ -243,17 +253,20 @@ const inMemoryStore = {
       return { error: 'INVALID_QUANTITY', message: 'Ticket quantity must be at least 1.' };
     }
 
-    // Check available quota
+    // Availability validation
     if (event.ticketsAvailable < qty) {
       return {
         error: 'INSUFFICIENT_STOCK',
         message: `Insufficient stock available. Only ${event.ticketsAvailable} ticket(s) remaining for "${event.title}".`,
         ticketsAvailable: event.ticketsAvailable,
+        ticketsBooked: event.ticketsBooked,
+        totalTickets: event.totalTickets,
       };
     }
 
-    // Atomic synchronous stock decrement
+    // Atomic synchronous updates: Maintain ticketsBooked + ticketsAvailable = totalTickets
     event.ticketsAvailable -= qty;
+    event.ticketsBooked += qty;
 
     const newTicket = {
       id: `tkt-${ticketIdCounter++}`,
@@ -264,37 +277,29 @@ const inMemoryStore = {
       status: 'booked',
     };
 
-    tickets.push(newTicket);
+    tickets.unshift(newTicket);
 
     return {
       success: true,
       ticket: populateTicket(newTicket),
       remainingStock: event.ticketsAvailable,
+      ticketsBooked: event.ticketsBooked,
+      totalTickets: event.totalTickets,
+      event: { ...event },
     };
   },
 
-  /**
-   * Fetch all tickets for a specific authenticated attendee
-   */
+  // --- Fetch My Tickets ---
   getTicketsByAttendee: (attendeeId) => {
     const userTickets = tickets.filter((t) => t.attendeeId === attendeeId);
     return userTickets.map(populateTicket);
   },
 
-  /**
-   * Fetch a single ticket by ID
-   */
   getTicketById: (id) => {
     return tickets.find((t) => t.id === id);
   },
 
-  /**
-   * Update ticket status with inventory consistency checks:
-   * - booked -> cancelled: restores event stock by ticket.quantity
-   * - cancelled -> booked: checks event quota and decrements stock
-   * - booked -> used: updates status without stock change
-   * - Prevents duplicate cancellations from restoring stock multiple times
-   */
+  // --- Update Ticket Status & Maintain Invariant ---
   updateTicketStatus: (ticketId, newStatus, requestingUserId, requestingUserRole) => {
     const ticket = tickets.find((t) => t.id === ticketId);
 
@@ -302,7 +307,7 @@ const inMemoryStore = {
       return { error: 'NOT_FOUND', message: `Ticket not found with ID: ${ticketId}` };
     }
 
-    // Ownership check: Attendee can only modify their own ticket; Organizer can modify any
+    // Authorization check
     const isOwner = ticket.attendeeId === requestingUserId;
     const isOrganizer = requestingUserRole === 'organizer';
 
@@ -316,25 +321,35 @@ const inMemoryStore = {
     const previousStatus = ticket.status;
     const event = events.find((e) => e.id === ticket.eventId);
 
-    // Idempotent check: if status is identical, do nothing
-    if (previousStatus === newStatus) {
+    // Used tickets cannot be cancelled or altered
+    if (previousStatus === 'used' && newStatus !== 'used') {
       return {
-        success: true,
-        message: `Ticket is already in "${newStatus}" status. No inventory change required.`,
-        ticket: populateTicket(ticket),
-        eventTicketsAvailable: event ? event.ticketsAvailable : null,
+        error: 'INVALID_TRANSITION',
+        message: 'A used ticket has already been redeemed and cannot be cancelled or modified.',
       };
     }
 
+    // Idempotent check
+    if (previousStatus === newStatus) {
+      return {
+        success: true,
+        message: `Ticket is already "${newStatus}". No inventory change required.`,
+        ticket: populateTicket(ticket),
+        eventTicketsAvailable: event ? event.ticketsAvailable : null,
+        ticketsBooked: event ? event.ticketsBooked : null,
+        totalTickets: event ? event.totalTickets : null,
+      };
+    }
 
-    // Case 1: Cancelling an active booking -> RESTORE inventory
+    // Case 1: Active booked -> Cancelled: Restore inventory exactly once
     if (previousStatus === 'booked' && newStatus === 'cancelled') {
       if (event) {
         event.ticketsAvailable += ticket.quantity;
+        event.ticketsBooked -= ticket.quantity;
       }
     }
 
-    // Case 2: Re-activating a cancelled booking -> CHECK QUOTA & DECREMENT
+    // Case 2: Cancelled -> Booked: Verify quota and decrement
     if (previousStatus === 'cancelled' && newStatus === 'booked') {
       if (!event || event.ticketsAvailable < ticket.quantity) {
         const available = event ? event.ticketsAvailable : 0;
@@ -345,9 +360,9 @@ const inMemoryStore = {
         };
       }
       event.ticketsAvailable -= ticket.quantity;
+      event.ticketsBooked += ticket.quantity;
     }
 
-    // Update status
     ticket.status = newStatus;
 
     return {
@@ -355,6 +370,8 @@ const inMemoryStore = {
       message: `Ticket status successfully changed from "${previousStatus}" to "${newStatus}".`,
       ticket: populateTicket(ticket),
       eventTicketsAvailable: event ? event.ticketsAvailable : null,
+      ticketsBooked: event ? event.ticketsBooked : null,
+      totalTickets: event ? event.totalTickets : null,
     };
   },
 };

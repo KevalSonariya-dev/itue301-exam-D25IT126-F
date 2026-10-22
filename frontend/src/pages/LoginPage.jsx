@@ -1,24 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/api';
 
 /**
- * LoginPage Component (Task 2)
- * 
- * Integrated with AuthContext:
- * - Updates attendee, token, and role on login.
- * - Redirects authenticated users to protected pages (/events or /organizer).
+ * LoginPage Component
+ * Authenticates against backend POST /api/v1/auth/login and receives signed JWT tokens
  */
 function LoginPage() {
-  const { login, token, role } = useAuth();
+  const { login, token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loginRole, setLoginRole] = useState('attendee'); // 'attendee' or 'organizer'
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-  // If already logged in, redirect away from LoginPage
+  // If already authenticated with token, navigate away
   useEffect(() => {
     if (token) {
       const destination = location.state?.from?.pathname || '/events';
@@ -26,39 +25,57 @@ function LoginPage() {
     }
   }, [token, navigate, location]);
 
-  const handleStandardLogin = (e) => {
+  const handleStandardLogin = async (e) => {
     e.preventDefault();
+    setErrorMessage(null);
+
     if (!email || !password) {
-      alert('Please enter both email and password.');
+      setErrorMessage('Please provide both email and password.');
       return;
     }
 
-    // Mock authentication payload (Task 2: without backend API)
-    const mockAttendee = {
-      name: email.split('@')[0],
-      email: email,
-    };
-    const mockToken = `mock-jwt-token-${Date.now()}`;
+    try {
+      setIsSubmitting(true);
+      const res = await api.login(email, password);
 
-    login(mockAttendee, mockToken, loginRole);
-
-    const redirectPath = loginRole === 'organizer' ? '/organizer' : '/events';
-    navigate(redirectPath, { replace: true });
+      if (res && res.token && res.attendee) {
+        login(res.attendee, res.token, res.attendee.role);
+        const redirectPath = res.attendee.role === 'organizer' ? '/organizer' : '/events';
+        navigate(redirectPath, { replace: true });
+      }
+    } catch (err) {
+      console.error('Login failed:', err);
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Authentication failed. Ensure backend server is running on http://localhost:5000.';
+      setErrorMessage(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Quick helper buttons for student viva demo
-  const handleQuickLogin = (selectedRole) => {
-    const isOrganizer = selectedRole === 'organizer';
-    const mockAttendee = {
-      name: isOrganizer ? 'Admin Organizer' : 'Keval Sonariya',
-      email: isOrganizer ? 'organizer@charusat.edu.in' : 'd25it126@charusat.edu.in',
-    };
-    const mockToken = `mock-token-${selectedRole}-${Date.now()}`;
+  // Quick helper buttons for viva testing calling live backend login endpoint
+  const handleQuickLogin = async (demoEmail, demoPassword) => {
+    setErrorMessage(null);
+    try {
+      setIsSubmitting(true);
+      const res = await api.login(demoEmail, demoPassword);
 
-    login(mockAttendee, mockToken, selectedRole);
-
-    const targetRoute = isOrganizer ? '/organizer' : '/events';
-    navigate(targetRoute, { replace: true });
+      if (res && res.token && res.attendee) {
+        login(res.attendee, res.token, res.attendee.role);
+        const redirectPath = res.attendee.role === 'organizer' ? '/organizer' : '/events';
+        navigate(redirectPath, { replace: true });
+      }
+    } catch (err) {
+      console.error('Quick login failed:', err);
+      setErrorMessage(
+        err.response?.data?.message ||
+          'Failed to sign in. Please verify backend is running on http://localhost:5000.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -71,6 +88,12 @@ function LoginPage() {
             Authenticate to access protected event booking and dashboard routes.
           </p>
         </div>
+
+        {errorMessage && (
+          <div className="alert-error" role="alert">
+            ❌ {errorMessage}
+          </div>
+        )}
 
         <form onSubmit={handleStandardLogin} className="login-form">
           <div className="form-group">
@@ -85,6 +108,7 @@ function LoginPage() {
               placeholder="e.g. attendee@charusat.edu.in"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              disabled={isSubmitting}
             />
           </div>
 
@@ -100,44 +124,40 @@ function LoginPage() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              disabled={isSubmitting}
             />
           </div>
 
-          <div className="form-group">
-            <label htmlFor="role-select" className="form-label">
-              Select Role for Session
-            </label>
-            <select
-              id="role-select"
-              className="form-input"
-              value={loginRole}
-              onChange={(e) => setLoginRole(e.target.value)}
-            >
-              <option value="attendee">Attendee (Standard User)</option>
-              <option value="organizer">Organizer (Admin Quota)</option>
-            </select>
-          </div>
-
-          <button type="submit" className="btn-primary-block">
-            Sign In with Credentials
+          <button
+            type="submit"
+            className="btn-primary-block"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Authenticating...' : 'Sign In with Credentials'}
           </button>
         </form>
 
-        {/* Quick-test buttons for examination demo */}
+        {/* Quick-test buttons for examination viva */}
         <div className="quick-login-box">
-          <div className="quick-login-title">Quick Demo Login (Viva Preset):</div>
+          <div className="quick-login-title">Live Viva Presets (Backend Authenticated):</div>
           <div className="quick-login-actions">
             <button
               type="button"
               className="btn-quick-attendee"
-              onClick={() => handleQuickLogin('attendee')}
+              disabled={isSubmitting}
+              onClick={() =>
+                handleQuickLogin('attendee@charusat.edu.in', 'Password123!')
+              }
             >
               👤 Login as Attendee
             </button>
             <button
               type="button"
               className="btn-quick-organizer"
-              onClick={() => handleQuickLogin('organizer')}
+              disabled={isSubmitting}
+              onClick={() =>
+                handleQuickLogin('organizer@charusat.edu.in', 'Password123!')
+              }
             >
               🛡️ Login as Organizer
             </button>
@@ -145,7 +165,9 @@ function LoginPage() {
         </div>
 
         <div className="login-footer-hint">
-          <span>Protected routes require a valid token &amp; role via AuthContext.</span>
+          <span>
+            Communicates with live POST /api/v1/auth/login and receives signed Bearer tokens.
+          </span>
         </div>
       </div>
     </div>
