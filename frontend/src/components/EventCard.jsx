@@ -10,7 +10,7 @@ import React from 'react';
  * @param {string} venue - Location or venue where the event takes place
  * @param {number} ticketsAvailable - Number of remaining available tickets
  */
-function EventCard({ title, category, date, venue, ticketsAvailable }) {
+function EventCard({ title, category, date, venue, ticketsAvailable, onBook }) {
   const isSoldOut = ticketsAvailable === 0;
 
   return (
@@ -53,7 +53,7 @@ function EventCard({ title, category, date, venue, ticketsAvailable }) {
           <button
             type="button"
             className="btn-book"
-            onClick={() => alert(`Selected event: "${title}"`)}
+            onClick={() => (onBook ? onBook() : alert(`Selected event: "${title}"`))}
           >
             Book Ticket
           </button>

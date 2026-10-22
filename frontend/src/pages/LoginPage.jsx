@@ -1,27 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 /**
- * LoginPage Component (Task 1 Starter UI)
- * NOTE: Authentication logic and backend endpoints will be implemented in subsequent tasks.
+ * LoginPage Component (Task 2)
+ * 
+ * Integrated with AuthContext:
+ * - Updates attendee, token, and role on login.
+ * - Redirects authenticated users to protected pages (/events or /organizer).
  */
 function LoginPage() {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const { login, token, role } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginRole, setLoginRole] = useState('attendee'); // 'attendee' or 'organizer'
+
+  // If already logged in, redirect away from LoginPage
+  useEffect(() => {
+    if (token) {
+      const destination = location.state?.from?.pathname || '/events';
+      navigate(destination, { replace: true });
+    }
+  }, [token, navigate, location]);
+
+  const handleStandardLogin = (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      alert('Please enter both email and password.');
+      return;
+    }
+
+    // Mock authentication payload (Task 2: without backend API)
+    const mockAttendee = {
+      name: email.split('@')[0],
+      email: email,
+    };
+    const mockToken = `mock-jwt-token-${Date.now()}`;
+
+    login(mockAttendee, mockToken, loginRole);
+
+    const redirectPath = loginRole === 'organizer' ? '/organizer' : '/events';
+    navigate(redirectPath, { replace: true });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // Task 1: UI demonstration only. Authentication API call to be integrated in future task.
-    alert(`Login attempted for: ${formData.email}\n(Authentication logic will be integrated in later task)`);
+  // Quick helper buttons for student viva demo
+  const handleQuickLogin = (selectedRole) => {
+    const isOrganizer = selectedRole === 'organizer';
+    const mockAttendee = {
+      name: isOrganizer ? 'Admin Organizer' : 'Keval Sonariya',
+      email: isOrganizer ? 'organizer@charusat.edu.in' : 'd25it126@charusat.edu.in',
+    };
+    const mockToken = `mock-token-${selectedRole}-${Date.now()}`;
+
+    login(mockAttendee, mockToken, selectedRole);
+
+    const targetRoute = isOrganizer ? '/organizer' : '/events';
+    navigate(targetRoute, { replace: true });
   };
 
   return (
@@ -31,11 +68,11 @@ function LoginPage() {
           <span className="login-icon-badge">🔐</span>
           <h2 className="login-title">Sign in to EventHub</h2>
           <p className="login-subtitle">
-            Enter your credentials to manage your bookings and explore exclusive events.
+            Authenticate to access protected event booking and dashboard routes.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="login-form">
+        <form onSubmit={handleStandardLogin} className="login-form">
           <div className="form-group">
             <label htmlFor="email" className="form-label">
               Email Address
@@ -43,12 +80,11 @@ function LoginPage() {
             <input
               type="email"
               id="email"
-              name="email"
               required
               className="form-input"
               placeholder="e.g. attendee@charusat.edu.in"
-              value={formData.email}
-              onChange={handleChange}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
@@ -59,22 +95,57 @@ function LoginPage() {
             <input
               type="password"
               id="password"
-              name="password"
               required
               className="form-input"
               placeholder="••••••••"
-              value={formData.password}
-              onChange={handleChange}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
+          <div className="form-group">
+            <label htmlFor="role-select" className="form-label">
+              Select Role for Session
+            </label>
+            <select
+              id="role-select"
+              className="form-input"
+              value={loginRole}
+              onChange={(e) => setLoginRole(e.target.value)}
+            >
+              <option value="attendee">Attendee (Standard User)</option>
+              <option value="organizer">Organizer (Admin Quota)</option>
+            </select>
+          </div>
+
           <button type="submit" className="btn-primary-block">
-            Sign In
+            Sign In with Credentials
           </button>
         </form>
 
+        {/* Quick-test buttons for examination demo */}
+        <div className="quick-login-box">
+          <div className="quick-login-title">Quick Demo Login (Viva Preset):</div>
+          <div className="quick-login-actions">
+            <button
+              type="button"
+              className="btn-quick-attendee"
+              onClick={() => handleQuickLogin('attendee')}
+            >
+              👤 Login as Attendee
+            </button>
+            <button
+              type="button"
+              className="btn-quick-organizer"
+              onClick={() => handleQuickLogin('organizer')}
+            >
+              🛡️ Login as Organizer
+            </button>
+          </div>
+        </div>
+
         <div className="login-footer-hint">
-          <span>Task 1 component skeleton (Auth logic will connect in later tasks)</span>
+          <span>Protected routes require a valid token &amp; role via AuthContext.</span>
         </div>
       </div>
     </div>
